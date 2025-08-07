@@ -2,9 +2,12 @@ import os
 import sys
 import struct
 import datetime
-from PIL import Image, ImageDraw, ImageFont, ImageOps
 from typing import List, Tuple, Union, Optional
-from pyprintlpr import LprClient
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+try:
+    from .tri_attr import rle_encode, dot_size_encode
+except ImportError:
+    from tri_attr import rle_encode, dot_size_encode
 
 
 class TextToImageConverter:
@@ -679,238 +682,6 @@ class EpsonEscp2:
         t_data += bytes([now.month, now.day, now.hour, now.minute, now.second])
         return self.remote_cmd("TI", t_data)
 
-    def rle_decode(self, bytestream):
-        """
-        Decode a bytestream using Run-Length Encoding compression format.
-        
-        Format specification:
-        - If 0 <= counter <= 127: following (counter+1) bytes are literal data
-        - If 128 <= counter <= 255: next byte is repeated 257-counter times
-        
-        Args:
-            bytestream: bytes object or list of integers representing the compressed data
-        
-        Returns:
-            bytes: decompressed data
-        """
-        if isinstance(bytestream, str):
-            # Convert hex string to bytes
-            bytestream = bytes.fromhex(bytestream)
-        elif isinstance(bytestream, list):
-            # Convert list of integers to bytes
-            bytestream = bytes(bytestream)
-        
-        result = bytearray()
-        i = 0
-        
-        while i < len(bytestream):
-            counter = bytestream[i]
-            i += 1
-            
-            if 0 <= counter <= 127:
-                # Literal data: copy the next (counter + 1) bytes
-                literal_length = counter + 1
-                if i + literal_length > len(bytestream):
-                    print(bytes(result).hex(" "))
-                    raise ValueError(f"Insufficient data: expected {literal_length} bytes at position {i} instead of {len(bytestream)}")
-                
-                result.extend(bytestream[i:i + literal_length])
-                i += literal_length
-                
-            elif 128 <= counter <= 255:
-                # Compressed data: repeat the next byte (257 - counter) times
-                if i >= len(bytestream):
-                    print(bytes(result).hex(" "))
-                    raise ValueError(f"Insufficient data: expected data byte at position {i}")
-                
-                repeat_byte = bytestream[i]
-                repeat_count = 257 - counter
-                result.extend([repeat_byte] * repeat_count)
-                i += 1
-                
-            else:
-                # This should never happen since counter is a byte (0-255)
-                raise ValueError(f"Invalid counter value: {counter} at position {i-1}")
-        
-        return bytes(result)
-
-    def rle_encode(self, data):
-        """
-        Encode data using Run-Length Encoding compression format.
-        
-        Args:
-            data: bytes object to compress
-        
-        Returns:
-            bytes: compressed data using RLE format
-        """
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        elif isinstance(data, list):
-            data = bytes(data)
-        
-        result = bytearray()
-        i = 0
-        
-        while i < len(data):
-            current_byte = data[i]
-            
-            # Count consecutive identical bytes (allow up to 129)
-            run_length = 1
-            while (i + run_length < len(data) and 
-                   data[i + run_length] == current_byte and 
-                   run_length < 129):
-                run_length += 1
-            
-            if run_length >= 2:
-                counter = 257 - run_length
-                result.append(counter)
-                result.append(current_byte)
-                i += run_length
-            else:
-                literal_start = i
-                while i < len(data):
-                    if i + 1 < len(data):
-                        next_run = 1
-                        while (i + next_run < len(data) and 
-                               data[i + next_run] == data[i] and 
-                               next_run < 129):
-                            next_run += 1
-                        if next_run >= 2:
-                            break
-                    i += 1
-                    if i - literal_start >= 128:
-                        break
-                
-                literal_length = i - literal_start
-                if literal_length > 0:
-                    result.append(literal_length - 1)
-                    result.extend(data[literal_start:i])
-        
-        return bytes(result)
-
-    def decode_dot_size(self, encoded):
-        """
-        Inverse of dot_size
-        """
-        if len(encoded) % 2 != 0:
-            raise ValueError("encoded length must be an even number")
-        
-        if self.bit_length == 1:
-            nibble_map = [
-                0b00000000, 0b00000001, 0b00000100, 0b00000101,
-                0b00010000, 0b00010001, 0b00010100, 0b00010101,
-                0b01000000, 0b01000001, 0b01000100, 0b01000101,
-                0b01010000, 0b01010001, 0b01010100, 0b01010101,
-            ]
-        elif self.bit_length == 2:
-            nibble_map = [
-                0b00000000, 0b00000010, 0b00001000, 0b00001010,
-                0b00100000, 0b00100010, 0b00101000, 0b00101010,
-                0b10000000, 0b10000010, 0b10001000, 0b10001010,
-                0b10100000, 0b10100010, 0b10101000, 0b10101010,
-            ]
-        else:  # self.bit_length == 3
-            nibble_map = [
-                0b00000000, 0b00000011, 0b00001100, 0b00001111,
-                0b00110000, 0b00110011, 0b00111100, 0b00111111,
-                0b11000000, 0b11000011, 0b11001100, 0b11001111,
-                0b11110000, 0b11110011, 0b11111100, 0b11111111,
-            ]
-        
-        reverse_map = {val: idx for idx, val in enumerate(nibble_map)}
-        
-        decoded = bytearray(len(encoded) // 2)
-        for i in range(0, len(encoded), 2):
-            hi = encoded[i]
-            lo = encoded[i+1]
-            if hi not in reverse_map or lo not in reverse_map:
-                raise ValueError(f"Invalid encoded byte at positions {i}, {i+1}")
-            upper_nibble = reverse_map[hi]
-            lower_nibble = reverse_map[lo]
-            decoded[i//2] = (upper_nibble << 4) | lower_nibble
-        
-        return bytes(decoded)
-
-    def dot_size(self, bytestream):
-        """
-        Create byte sequence according to bit length
-        """
-        # Create lookup table for 4-bit values (16 entries)
-        # Each 4 input bits become 8 output bits (1 byte)
-        if self.bit_length == 1:
-            # 0->00, 1->01
-            nibble_map = [
-                0b00000000,  # 0000 -> 00000000
-                0b00000001,  # 0001 -> 00000001
-                0b00000100,  # 0010 -> 00000100
-                0b00000101,  # 0011 -> 00000101
-                0b00010000,  # 0100 -> 00010000
-                0b00010001,  # 0101 -> 00010001
-                0b00010100,  # 0110 -> 00010100
-                0b00010101,  # 0111 -> 00010101
-                0b01000000,  # 1000 -> 01000000
-                0b01000001,  # 1001 -> 01000001
-                0b01000100,  # 1010 -> 01000100
-                0b01000101,  # 1011 -> 01000101
-                0b01010000,  # 1100 -> 01010000
-                0b01010001,  # 1101 -> 01010001
-                0b01010100,  # 1110 -> 01010100
-                0b01010101,  # 1111 -> 01010101
-            ]
-        elif self.bit_length == 2:
-            # 0->00, 1->10
-            nibble_map = [
-                0b00000000,  # 0000 -> 00000000
-                0b00000010,  # 0001 -> 00000010
-                0b00001000,  # 0010 -> 00001000
-                0b00001010,  # 0011 -> 00001010
-                0b00100000,  # 0100 -> 00100000
-                0b00100010,  # 0101 -> 00100010
-                0b00101000,  # 0110 -> 00101000
-                0b00101010,  # 0111 -> 00101010
-                0b10000000,  # 1000 -> 10000000
-                0b10000010,  # 1001 -> 10000010
-                0b10001000,  # 1010 -> 10001000
-                0b10001010,  # 1011 -> 10001010
-                0b10100000,  # 1100 -> 10100000
-                0b10100010,  # 1101 -> 10100010
-                0b10101000,  # 1110 -> 10101000
-                0b10101010,  # 1111 -> 10101010
-            ]
-        else:  # self.bit_length == 3
-            # 0->00, 1->11
-            nibble_map = [
-                0b00000000,  # 0000 -> 00000000
-                0b00000011,  # 0001 -> 00000011
-                0b00001100,  # 0010 -> 00001100
-                0b00001111,  # 0011 -> 00001111
-                0b00110000,  # 0100 -> 00110000
-                0b00110011,  # 0101 -> 00110011
-                0b00111100,  # 0110 -> 00111100
-                0b00111111,  # 0111 -> 00111111
-                0b11000000,  # 1000 -> 11000000
-                0b11000011,  # 1001 -> 11000011
-                0b11001100,  # 1010 -> 11001100
-                0b11001111,  # 1011 -> 11001111
-                0b11110000,  # 1100 -> 11110000
-                0b11110011,  # 1101 -> 11110011
-                0b11111100,  # 1110 -> 11111100
-                0b11111111,  # 1111 -> 11111111
-            ]
-        
-        result = bytearray(len(bytestream) * 2)
-        
-        for i, byte_val in enumerate(bytestream):
-            # Process upper and lower nibbles
-            upper_nibble = (byte_val >> 4) & 0x0F
-            lower_nibble = byte_val & 0x0F
-            
-            result[i * 2] = nibble_map[upper_nibble]
-            result[i * 2 + 1] = nibble_map[lower_nibble]
-        
-        return bytes(result)
-
     def image_to_tri(
         self,
         image: Image.Image,
@@ -930,7 +701,7 @@ class EpsonEscp2:
         bytestream = image.tobytes()
 
         if self.bit_length:
-            bytestream = self.dot_size(bytestream)
+            bytestream = dot_size_encode(bytestream, self.bit_length)
             bytes_per_line = (width + 7) // 8 * 2
         else:
             bytes_per_line = (width + 7) // 8
@@ -966,39 +737,64 @@ class EpsonEscp2:
             start = y * bytes_per_line
             end = start + block_h * bytes_per_line
             block_data = bytestream[start:end]
+            if block_data == b'\x00' * len(block_data):
+                continue
 
             if self.compress:
-                block_data = self.rle_encode(block_data)
+                block_data = rle_encode(block_data)
 
             output += bytes.fromhex(v_pos + h_pos) + header + bytes(block_data)
 
         return bytes(output)
 
-    def tri_to_escp2(self, tri):
+    def tri_to_escp2(
+        self,
+        tri,
+        h_dpi: int = 360,
+        v_dpi: int = 120,  # 360
+        page: int = 120,  # 360
+        unit: int = 1440,
+        method_id: str = "11",  # "11" = Fast Eco bw only; "21" = normal
+        dot_size_id: str = "11",  # 11 (fast eco)
+    ):
+        row_dots = int(
+            21  # A4 (21 cm)
+            / 2.54  # cm to in
+            * page
+        )
+        page_dots = int(
+            29.7  # A4 (29.7 cm)
+            / 2.54  # cm to in
+            * page
+        )
         command_parts = (
             "1b 28 47 01 00 01"  # Select graphics mode
-            + "1b 28 55 05 00 0c 0c 04 a0 05"  # ESC (U = Sets units P=12(120), V=12(120), H=4(360), mL mH - m=1440
+            + (
+                "1b 28 55 05 00 "
+                + f'{unit//page:02x} {unit//v_dpi:02x} {unit//h_dpi:02x} '
+                + unit.to_bytes(2, byteorder='little').hex(" ")
+            )  # ESC (U = Sets units P=12(120), V=12(120), H=4(360), mL mH - m=1440
             + "1b 55 00"  # selects bi-directional printing
             + "1b 28 69 01 00 00"  # no MicroWeave printing mode
             + (
                 "1b 28 43 04 00 "
-                + int(1403).to_bytes(4, byteorder='little', signed=True).hex(" ")
-            )  # Set page length - ESC (C nL nH m1 m2 m3 m4 = 1403 -> 1403 * 12 / 1440 * 2,54 = 29,7 cm = A4
+                + page_dots.to_bytes(4, byteorder='little', signed=True).hex(" ")
+            )  # Set page length - ESC (C nL nH m1 m2 m3 m4
             #+ (
             #    "1b 28 63 08 00 "
-            #    + int(-127).to_bytes(4, byteorder='little', signed=True).hex(" ")
-            #    + int(1403).to_bytes(4, byteorder='little', signed=True).hex(" ")
+            #    + int(-127).to_bytes(4, byteorder='little', signed=True).hex(" ")  # -381
+            #    + int(1403).to_bytes(4, byteorder='little', signed=True).hex(" ")  # 4425
             #)  # Set page format (ext) - ESC (c nL nH t1 t2 t3 t4 b1 b2 b3 b4
             + (
                 "1b 28 53 08 00 "
-                + int(992).to_bytes(4, byteorder='little', signed=True).hex(" ")
-                + int(1403).to_bytes(4, byteorder='little', signed=True).hex(" ")
+                + row_dots.to_bytes(4, byteorder='little', signed=True).hex(" ")
+                + page_dots.to_bytes(4, byteorder='little', signed=True).hex(" ")
             )  # paper width=992 paper length=1403 -> 992 * 12 / 1440 *2,54 = 21cm A4 -> 1403 * 12 / 1440 * 2,54 = 29,7 cm = A4
             + "1b 28 4b 02 00 00 01"  # monochrome
             + "1b 28 4b 02 00 01 01"  # monochrome (2nd mode)
             + "1b 28 44 04 00 40 38 78 28"  # Set the raster image resolution; r=14400 v=120 h=40; Vertical resolution : 14400/120 = 120 dpi; Horizontal resolution = 14400/40=360 dpi
-            + "1b 28 6d 01 00 11"  # ESC (m - Set Print method ID 11 = Fast Eco bw only
-            + "1b 28 65 02 00 00 11"  # Selects dot size ESC (e nL nH m d - n=2, d=11 (fast eco)
+            + "1b 28 6d 01 00 " + method_id  # ESC (m - Set Print method ID 11 = Fast Eco bw only
+            + "1b 28 65 02 00 00 " + dot_size_id  # Selects dot size ESC (e nL nH m d - n=2, d=11 (fast eco)
         )
 
         pattern = (
@@ -1028,7 +824,7 @@ class EpsonEscp2:
     def test_color_pattern(self, get_pattern=False, use_black23=False):
         """
         Print a one-page color test pattern at various quality levels via LPR.
-        Optimized for XP-200 and XP-205 models.
+        Optimized for XP-200, XP-205, XP-410 models.
         Returns True if the pattern was successfully printed (sending the
             print-out to the host by creating a LPR job), False otherwise.
         If get_pattern is True, returns the ESC/P2 command sequence for the
@@ -1132,10 +928,10 @@ class EpsonEscp2:
                 # Initialization
                 command_parts.append(
                     "1b2847010001"  # Select graphics mode
-                    + "1b28550500010101a005"  # ESC (U = Sets 360 DPI resolution
-                    + "1b28430400c6410000"  # ESC (C = Configures page lenght
-                    + "1b28630800ffffffffc6410000"  # ESC (c = Set page format
-                    + "1b28530800822e0000c6410000"  # ESC (S = paper dimension specification
+                    + "1b28550500010101a005"  # ESC (U = Sets 360 DPI resolution, P=1, V=1, H=1, unit=1440
+                    + "1b28430400c6410000"  # ESC (C = Configures page lenght, 16838 = 29.7cm
+                    + "1b28630800ffffffffc6410000"  # ESC (c = Set page format, top=-1, bottom=16838
+                    + "1b28530800822e0000c6410000"  # ESC (S = paper dimension specification, 11906x16838 = 21.0x29.7cm
                     + "1b28440400" + "68010301"  # ESC (D = raster image resolution, r=360, v=3, h=1; 360/3=120 dpi vertically, 360/1=360 dpi horizontally
                     + "1b2865020000" + vsd_code[segment["vsd"]]  # ESC (e = Select Ink Drop Size
                     + "1b5502"  # ESC U 02H = selects automatic printing direction control
@@ -1150,19 +946,19 @@ class EpsonEscp2:
 
                 # Second block - Yellow/Magenta/Cyan alternating
                 # With colors, regardless the TRI sequence, yellow is hosted by the first 60 nozzle rows,
-                # then magenta, then cyan. We are actually using 42 rows
+                # then magenta, then cyan. We are actually using 42 rows for each color.
                 command_parts.append(USE_COLOR + SET_H_POS + "80060000")  # ESC ( $ = Set absolute horizontal print position, 1664 = 29,35 mm
 
                 command_parts.append(TRI_MAGENTA)
-                command_parts.append(segment["alternating_pattern"] * 64)
+                command_parts.append(segment["alternating_pattern"] * 21)  # 21 x (640 h dots per pattern / 320 h dots per line) = 42 v rows = v 0,88 cm
 
                 command_parts.append(SET_H_POS + "80060000")  # ESC ( $ = Set absolute horizontal print position, 1664 = 29,35 mm        
                 command_parts.append(TRI_YELLOW)
-                command_parts.append(segment["alternating_pattern"] * 64)
+                command_parts.append(segment["alternating_pattern"] * 21)
 
                 command_parts.append(SET_H_POS + "80060000")  # ESC ( $ = Set absolute horizontal print position, 1664 = 29,35 mm        
                 command_parts.append(TRI_CYAN)
-                command_parts.append(segment["alternating_pattern"] * 64)
+                command_parts.append(segment["alternating_pattern"] * 21)
 
                 # Third block - Black solid
                 command_parts.append(USE_MONOCHROME + SET_H_POS + "000c0000")  # ESC ( $ = Set absolute horizontal print position, 3072 = 54,35 mm
@@ -1174,30 +970,30 @@ class EpsonEscp2:
                 command_parts.append(USE_COLOR + SET_H_POS + "80110000")  # ESC ( $ = Set absolute horizontal print position, 4480 = 79 mm
                 
                 command_parts.append(TRI_MAGENTA)
-                command_parts.append(segment["solid_pattern"] * 256)
+                command_parts.append(segment["solid_pattern"] * 84) # 84 x (160 h dots per pattern / 320 h dots per line) = 42 v rows = v 0,88 cm
 
                 command_parts.append(SET_H_POS + "80110000")  # ESC ( $ = Set absolute horizontal print position, 4480 = 79 mm        
                 command_parts.append(TRI_YELLOW)
-                command_parts.append(segment["solid_pattern"] * 256)
+                command_parts.append(segment["solid_pattern"] * 84)
 
                 command_parts.append(SET_H_POS + "80110000")  # ESC ( $ = Set absolute horizontal print position, 4480 = 79 mm        
                 command_parts.append(TRI_CYAN)
-                command_parts.append(segment["solid_pattern"] * 256)
+                command_parts.append(segment["solid_pattern"] * 84)
 
                 # Fifth block - Black/Black2/Black3 solid
                 if use_black23:
                     command_parts.append(USE_COLOR + SET_H_POS + "00170000")  # ESC ( $ = Set absolute horizontal print position, 5888 = 103,8 mm
                     
                     command_parts.append(TRI_BLACK)
-                    command_parts.append(segment["solid_pattern"] * 256)
+                    command_parts.append(segment["solid_pattern"] * 84)
 
                     command_parts.append(SET_H_POS + "00170000")  # ESC ( $ = Set absolute horizontal print position, 5888 = 103,8 mm
                     command_parts.append(TRI_BLACK2)
-                    command_parts.append(segment["solid_pattern"] * 256)
+                    command_parts.append(segment["solid_pattern"] * 84)
 
                     command_parts.append(SET_H_POS + "00170000")  # ESC ( $ = Set absolute horizontal print position, 5888 = 103,8 mm
                     command_parts.append(TRI_BLACK3)
-                    command_parts.append(segment["solid_pattern"] * 256)
+                    command_parts.append(segment["solid_pattern"] * 84)
                 
                 command_parts.append(SET_V_POS + "00030000")  # ESC (v = Set relative vertical print position
                 # Relative vertical offset = 768 units = 13.54 mm

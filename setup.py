@@ -19,10 +19,7 @@ Full information and usage details at the [epson_escp2 GitHub repository](https:
 '''
 
 DESCRIPTION = (
-    "RFC 1179 client and server toolkits and Python library"
-    " for interacting with printers via LPR protocol or RAW mode,"
-    " as well as a proxy/server for debugging, job capture,"
-    " and protocol analysis."
+    "A comprehensive module for generating ESC/P2 printer sequences from text or images. Supports markdown-like formatting, tables, and various text styles. It includes a comprehensive ESC/P2 decoder."
 )
 
 PACKAGE_NAME = "epson_escp2"
@@ -79,7 +76,9 @@ setup(
         ],
     },
     install_requires=[
-        'pyprintlpr',
+        'pillow',  # for managing images
+        'hexdump2',  # for decoding
+        #  'pyprintlpr',  # for direct printing
     ],
     python_requires='>3.6'
 )
