@@ -143,7 +143,9 @@ def decode_escp2_commands(
             }
             if length == 4 and args[0] == 0x00:
                 format = args[1] | (args[2] << 8) | (args[3] << 16)
-                description = format_str.get(format)
+                # m1 (args[1]) is always 0x01; args[2] (m2) defines the media type
+                # and args[3] defines the paper size.
+                description = format_str.get(args[2])
                 paper_description = paper.get(args[3], "Unknown paper format")
                 if description:
                     return (f'MI Select paper media remote_cmd: {format} ({description}, {paper_description})', pos + 4 + length)
@@ -708,7 +710,13 @@ def decode_escp2_commands(
                     unit = unit_dict["unit"] if unit_dict["unit"] else 1
                     top_mm = top * P / unit * 25.4
                     bottom_mm = bottom * P / unit * 25.4
-                    return f"❬ESC (c❭ set_page_format_extended(top={top}={top_mm:.1f}mm, bottom={bottom}={bottom_mm:.1f}mm)", pos + 5 + length
+                    # Documented range for this value is 0 to 0x1fffffff (relative to
+                    # the printable area); values outside this range (e.g. 0xffffffff,
+                    # interpreted as -1) are most likely ignored by the printer.
+                    range_note = ""
+                    if not (0 <= top <= 0x1fffffff):
+                        range_note = " (top out of range: expected 0 to 0x1fffffff, likely ignored)"
+                    return f"❬ESC (c❭ set_page_format_extended(top={top}={top_mm:.1f}mm, bottom={bottom}={bottom_mm:.1f}mm){range_note}", pos + 5 + length
                 return f"❬ESC (c❭ set_page_format(args={args.hex()})", pos + 5 + length
             elif cmd_char == 'S':  # Paper size
                 if length == 8:

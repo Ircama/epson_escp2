@@ -833,6 +833,7 @@ class EpsonEscp2:
         # Transfer Raster image commands (ESC i), Color, Run Length Encoding,
         # 2 bits per pixel, 4 pixels per byte, H: 80 bytes = 320 dots = h 2,26 cm @ 360dpi (320/360*2,54)
         TRI_BLACK = "1b6900010250008000"  # ESC i 0: Black, V: 128 dots/rows (monochrome, 180 dpi) = 128/120*2,54= v 2,7 cm
+        TRI_BLACK_42 = "1b6900010250002a00"  # ESC i 0: Black, V: 42 dots/rows (42 black rows + 42 white rows) = same vertical pitch as the color channels
         TRI_MAGENTA = "1b6901010250002a00"  # ESC i 1: Magenta, V: 42 dots/rows (21 colored rows + 21 white rows)
         TRI_YELLOW = "1b6904010250002a00"  # ESC i 4: Yellow, V: 42 dots/rows dots
         TRI_CYAN = "1b6902010250002a00"  # ESC i 2: Cyan, V: 42 dots/rows
@@ -929,8 +930,11 @@ class EpsonEscp2:
                 command_parts.append(
                     "1b2847010001"  # Select graphics mode
                     + "1b28550500010101a005"  # ESC (U = Sets 360 DPI resolution, P=1, V=1, H=1, unit=1440
+                    # Note: ESC (C, ESC (c and ESC (S should be issued before the paper is
+                    # loaded (they redefine the print origin); most printers ignore them
+                    # when received in the middle of a page.
                     + "1b28430400c6410000"  # ESC (C = Configures page length, 16838 = 29.7cm
-                    + "1b28630800ffffffffc6410000"  # ESC (c = Set page format, top=-1, bottom=16838
+                    + "1b28630800ffffffffc6410000"  # ESC (c = Set page format, top=-1 (0xffffffff, out of the documented 0-0x1fffffff range: relative to the printable area, likely ignored), bottom=16838
                     + "1b28530800822e0000c6410000"  # ESC (S = paper dimension specification, 11906x16838 = 21.0x29.7cm
                     + "1b28440400" + "68010301"  # ESC (D = raster image resolution, r=360, v=3, h=1; 360/3=120 dpi vertically, 360/1=360 dpi horizontally
                     + "1b2865020000" + vsd_code[segment["vsd"]]  # ESC (e = Select Ink Drop Size
@@ -981,10 +985,13 @@ class EpsonEscp2:
                 command_parts.append(segment["solid_pattern"] * 84)
 
                 # Fifth block - Black/Black2/Black3 solid
+                # The black channel uses the same 42 dots/row vertical pitch as the
+                # color channels here (solid_pattern is repeated 84 times = 42 rows),
+                # so the ESC i header must declare 0x2a rows, not 0x80.
                 if use_black23:
                     command_parts.append(USE_COLOR + SET_H_POS + "00170000")  # ESC ( $ = Set absolute horizontal print position, 5888 = 103,8 mm
                     
-                    command_parts.append(TRI_BLACK)
+                    command_parts.append(TRI_BLACK_42)
                     command_parts.append(segment["solid_pattern"] * 84)
 
                     command_parts.append(SET_H_POS + "00170000")  # ESC ( $ = Set absolute horizontal print position, 5888 = 103,8 mm
