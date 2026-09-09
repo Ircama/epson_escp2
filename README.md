@@ -28,16 +28,14 @@ Epson’s **ESC/P2** is Epson’s extended page description language that enable
 
 ```bash
 pip install epson_escp2
-pip install pyprintlpr  # optional module to use the LPR options of epson_escp2
+pip install "epson_escp2[lpr]"  # optional extra to use the LPR options of epson_escp2
 ```
 
 ## Command Line Interface
 
 ### Basic Usage
 
-```bash
-python -m epson_escp2 [command] [options]
-
+```text
 usage: epson_escp2 [-h] [--dump] [--preview] [--version] [--compress] [--max-block-h] [--bit-length {1,2,3}] [--threshold THRESHOLD] [--font-size FONT_SIZE]
                    [--padding PADDING] [--line-spacing LINE_SPACING] [--host HOST] [--port PORT] [--queue QUEUE] [--label LABEL]
                    {text,file,image,demo} ...
@@ -52,7 +50,7 @@ positional arguments:
     image               Convert image to ESC/P2
     demo                Generate demo output
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --dump                Dump data
   --preview             Show image preview
@@ -204,7 +202,7 @@ The module supports basic markdown-like formatting:
 
 ### Print "Hello World"
 ```python
-from epson_escp2 import TextToImageConverter, EpsonEscp2
+from epson_escp2.epson_encode import TextToImageConverter, EpsonEscp2
 from pyprintlpr import LprClient
 
 converter = TextToImageConverter()

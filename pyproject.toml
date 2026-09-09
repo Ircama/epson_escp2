@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "epson_escp2"
+description = "A comprehensive module for generating ESC/P2 printer sequences from text or images. Supports markdown-like formatting, tables, and various text styles. It includes a comprehensive ESC/P2 decoder."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "EUPL-1.2"
+license-files = ["LICENSE.txt"]
+authors = [{ name = "Ircama" }]
+keywords = ["shell", "console", "tkinter"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "pillow",   # for managing images
+    "hexdump2", # for decoding
+    #  "pyprintlpr",  # for direct printing (install with the "lpr" extra)
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+lpr = ["pyprintlpr"]
+
+[project.urls]
+Homepage = "https://github.com/Ircama/epson_escp2"
+
+[project.scripts]
+epson_escp2 = "epson_escp2.__main__:main"
+
+[tool.setuptools]
+packages = ["epson_escp2"]
+
+[tool.setuptools.dynamic]
+version = { attr = "epson_escp2.__version__.__version__" }

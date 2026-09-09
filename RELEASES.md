@@ -8,11 +8,11 @@ Do not remove '# Connecting' in README.md.
 
 If a version needs to be changed, edit `epson_escp2/__version__.py`.
 
-This file is read by *setup.py*.
+This file is read by *pyproject.toml* (dynamic version).
 
 If the version is not changed, the publishing procedure works using the same version with a different build number.
 
-The GITHUB_RUN_NUMBER environment variable, when available, is read by *setup.py*.
+The GITHUB_RUN_NUMBER environment variable, when available, is read by *pyproject.toml*.
 
 Push all changes:
 

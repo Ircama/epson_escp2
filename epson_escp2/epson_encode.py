@@ -929,7 +929,7 @@ class EpsonEscp2:
                 command_parts.append(
                     "1b2847010001"  # Select graphics mode
                     + "1b28550500010101a005"  # ESC (U = Sets 360 DPI resolution, P=1, V=1, H=1, unit=1440
-                    + "1b28430400c6410000"  # ESC (C = Configures page lenght, 16838 = 29.7cm
+                    + "1b28430400c6410000"  # ESC (C = Configures page length, 16838 = 29.7cm
                     + "1b28630800ffffffffc6410000"  # ESC (c = Set page format, top=-1, bottom=16838
                     + "1b28530800822e0000c6410000"  # ESC (S = paper dimension specification, 11906x16838 = 21.0x29.7cm
                     + "1b28440400" + "68010301"  # ESC (D = raster image resolution, r=360, v=3, h=1; 360/3=120 dpi vertically, 360/1=360 dpi horizontally
