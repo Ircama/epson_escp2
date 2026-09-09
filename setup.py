@@ -8,7 +8,7 @@ import sys
 
 import json
 from urllib import request
-from pkg_resources import parse_version
+from packaging.version import Version
 
 ###########################################################################
 
@@ -35,7 +35,7 @@ def versions(pkg_name, site):
     except Exception as e:
         print("Error while getting data from URL '" + url + "': " + e)
         return []
-    return sorted(releases, key=parse_version, reverse=True)
+    return sorted(releases, key=Version, reverse=True)
 
 with open("README.md", "r", encoding="utf-8") as readme:
     long_description = readme.read()
